@@ -475,6 +475,18 @@ export const exactUtilities: Record<string, Record<string, string>> = {
     contain: 'overscroll-y-contain',
     none: 'overscroll-y-none'
   },
+  'scrollbar-width': { auto: 'scrollbar-auto', thin: 'scrollbar-thin', none: 'scrollbar-none' },
+  'scrollbar-gutter': {
+    stable: 'scrollbar-gutter-stable',
+    'stable both-edges': 'scrollbar-gutter-both-edges'
+  },
+  'mask-type': { alpha: 'mask-type-alpha', luminance: 'mask-type-luminance' },
+  'mask-composite': {
+    add: 'mask-composite-add',
+    subtract: 'mask-composite-subtract',
+    intersect: 'mask-composite-intersect',
+    exclude: 'mask-composite-exclude'
+  },
   'scroll-behavior': { auto: 'scroll-auto', smooth: 'scroll-smooth' },
   'touch-action': {
     auto: 'touch-auto',
@@ -565,6 +577,24 @@ export const exactUtilities: Record<string, Record<string, string>> = {
     '0% 50%': 'origin-left',
     '0 0': 'origin-top-left',
     '0% 0%': 'origin-top-left'
+  },
+  'perspective-origin': {
+    center: 'perspective-origin-center',
+    top: 'perspective-origin-top',
+    'top right': 'perspective-origin-top-right',
+    right: 'perspective-origin-right',
+    'bottom right': 'perspective-origin-bottom-right',
+    bottom: 'perspective-origin-bottom',
+    'bottom left': 'perspective-origin-bottom-left',
+    left: 'perspective-origin-left',
+    'top left': 'perspective-origin-top-left',
+    '100% 0': 'perspective-origin-top-right',
+    '100% 0%': 'perspective-origin-top-right',
+    '100% 100%': 'perspective-origin-bottom-right',
+    '0 100%': 'perspective-origin-bottom-left',
+    '0% 100%': 'perspective-origin-bottom-left',
+    '0 0': 'perspective-origin-top-left',
+    '0% 0%': 'perspective-origin-top-left'
   },
   'scroll-snap-align': {
     start: 'snap-start',
@@ -810,6 +840,9 @@ export const arbitraryPrefixes: Record<string, string> = {
   'flex-shrink': 'shrink',
   'word-spacing': 'word-spacing',
   hyphens: 'hyphens',
+  'scrollbar-color': 'scrollbar-color',
+  'font-feature-settings': 'font-feature',
+  'perspective-origin': 'perspective-origin',
   'column-rule-color': 'column-rule',
   'column-rule-width': 'column-rule',
   'column-rule-style': 'column-rule',

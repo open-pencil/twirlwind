@@ -454,6 +454,21 @@ export const propertySamples: PropertySample[] = [
     expectedKind: 'exact'
   },
   { name: 'will change transform', style: { willChange: 'transform' }, expectedKind: 'exact' },
+  { name: 'scrollbar thin', style: { scrollbarWidth: 'thin' }, expectedKind: 'exact' },
+  { name: 'scrollbar none', style: { scrollbarWidth: 'none' }, expectedKind: 'exact' },
+  {
+    name: 'scrollbar gutter stable',
+    style: { scrollbarGutter: 'stable' },
+    expectedKind: 'exact'
+  },
+  { name: 'mask type alpha', style: { maskType: 'alpha' }, expectedKind: 'exact' },
+  { name: 'mask composite add', style: { maskComposite: 'add' }, expectedKind: 'exact' },
+  {
+    name: 'perspective origin top right',
+    style: { perspectiveOrigin: 'top right' },
+    expectedKind: 'exact'
+  },
+  { name: 'skew property', style: { skew: '6deg' }, expectedKind: 'exact' },
   { name: 'contain content', style: { contain: 'content' }, expectedKind: 'exact' },
   { name: 'contain layout', style: { contain: 'layout' }, expectedKind: 'exact' },
   { name: 'contain inline size', style: { contain: 'inline-size' }, expectedKind: 'exact' },
