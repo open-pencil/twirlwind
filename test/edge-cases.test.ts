@@ -127,6 +127,47 @@ test('compression produces clean output', () => {
   expect(twirl({ gap: '8px 8px' })).toBe('gap-2')
 })
 
+test('var() references produce Tailwind v4 variable syntax', () => {
+  expect(twirl({ color: 'var(--brand)' })).toBe('text-(--brand)')
+  expect(twirl({ backgroundColor: 'var(--surface)' })).toBe('bg-(--surface)')
+  expect(twirl({ padding: 'var(--gutter)' })).toBe('p-(--gutter)')
+  expect(twirl({ gap: 'var(--grid-gap)' })).toBe('gap-(--grid-gap)')
+  expect(twirl({ fontSize: 'var(--text-lg)' })).toBe('text-(--text-lg)')
+})
+
+test('calc() expressions in arbitrary values', () => {
+  expect(twirl({ width: 'calc(100% - 2rem)' })).toBe('w-[calc(100%_-_2rem)]')
+  expect(twirl({ height: 'calc(100dvh - 4rem)' })).toBe('h-[calc(100dvh_-_4rem)]')
+})
+
+test('box-shadow scale matching', () => {
+  expect(twirl({ boxShadow: '0 1px 2px 0 rgb(0 0 0 / 0.05)' })).toBe('shadow-xs')
+  expect(
+    twirl({ boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)' })
+  ).toBe('shadow-sm')
+  expect(
+    twirl({ boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' })
+  ).toBe('shadow-md')
+  expect(twirl({ boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)' })).toBe('shadow-2xl')
+  expect(twirl({ boxShadow: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)' })).toBe('shadow-inner')
+  expect(twirl({ boxShadow: 'none' })).toBe('shadow-none')
+})
+
+test('linear gradient parsing', () => {
+  expect(twirl({ backgroundImage: 'linear-gradient(to right, #ef4444, #3b82f6)' })).toBe(
+    'bg-linear-to-r from-red-500 to-blue-500'
+  )
+  expect(twirl({ backgroundImage: 'linear-gradient(to bottom, #ef4444, #22c55e, #3b82f6)' })).toBe(
+    'bg-linear-to-b from-red-500 via-green-500 to-blue-500'
+  )
+  expect(twirl({ backgroundImage: 'linear-gradient(45deg, white, black)' })).toBe(
+    'bg-linear-45 from-white to-black'
+  )
+  expect(twirl({ backgroundImage: 'linear-gradient(to right, transparent, white)' })).toBe(
+    'bg-linear-to-r from-transparent to-white'
+  )
+})
+
 test('arbitrary property fallback for unknown CSS', () => {
   const result = twirl.convert({ scrollTimelineName: '--x' })
   expect(result.classes).toEqual(['[scroll-timeline-name:--x]'])

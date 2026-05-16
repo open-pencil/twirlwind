@@ -77,6 +77,20 @@ export function convertDeclaration(
     return converted(declaration, filterResult, 'exact')
   }
 
+  const shadowClass = convertShadow(declaration)
+  if (shadowClass) return converted(declaration, shadowClass, 'exact')
+
+  const gradientResult = convertGradient(declaration, options)
+  if (gradientResult) {
+    if (Array.isArray(gradientResult)) {
+      return gradientResult.map((cls) => converted(declaration, cls, 'exact'))
+    }
+    return converted(declaration, gradientResult, 'exact')
+  }
+
+  const varRef = convertVarReference(declaration)
+  if (varRef) return converted(declaration, varRef, 'exact')
+
   const prefix = arbitraryPrefixes[declaration.property]
   if (prefix && options.allowArbitraryValues) {
     return converted(declaration, arbitraryValue(prefix, declaration.value), 'arbitrary')
@@ -651,6 +665,179 @@ function scaleClass(value: string, prefix = 'scale'): string | undefined {
   if (!Number.isInteger(percent)) return `${prefix}-[${value.trim()}]`
 
   return percent < 0 ? `-${prefix}-${Math.abs(percent)}` : `${prefix}-${percent}`
+}
+
+const shadowValues: Record<string, string> = {
+  '0 1px 2px 0 rgb(0 0 0 / 0.05)': 'shadow-xs',
+  '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)': 'shadow-sm',
+  '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)': 'shadow-md',
+  '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)': 'shadow-lg',
+  '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)': 'shadow-xl',
+  '0 25px 50px -12px rgb(0 0 0 / 0.25)': 'shadow-2xl',
+  'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)': 'shadow-inner'
+}
+
+function convertShadow(declaration: Declaration): string | undefined {
+  if (declaration.property !== 'box-shadow') return undefined
+  return shadowValues[declaration.value.trim().replace(/\s+/g, ' ')]
+}
+
+const varPrefixes: Record<string, string> = {
+  color: 'text',
+  'background-color': 'bg',
+  'border-color': 'border',
+  'border-top-color': 'border-t',
+  'border-right-color': 'border-r',
+  'border-bottom-color': 'border-b',
+  'border-left-color': 'border-l',
+  'outline-color': 'outline',
+  fill: 'fill',
+  stroke: 'stroke',
+  'caret-color': 'caret',
+  'accent-color': 'accent',
+  'text-decoration-color': 'decoration',
+  width: 'w',
+  height: 'h',
+  'min-width': 'min-w',
+  'min-height': 'min-h',
+  'max-width': 'max-w',
+  'max-height': 'max-h',
+  padding: 'p',
+  'padding-top': 'pt',
+  'padding-right': 'pr',
+  'padding-bottom': 'pb',
+  'padding-left': 'pl',
+  margin: 'm',
+  'margin-top': 'mt',
+  'margin-right': 'mr',
+  'margin-bottom': 'mb',
+  'margin-left': 'ml',
+  gap: 'gap',
+  'row-gap': 'gap-y',
+  'column-gap': 'gap-x',
+  'font-size': 'text',
+  'font-family': 'font',
+  'border-radius': 'rounded',
+  'border-width': 'border',
+  'box-shadow': 'shadow',
+  'line-height': 'leading',
+  'letter-spacing': 'tracking'
+}
+
+function convertVarReference(declaration: Declaration): string | undefined {
+  const match = declaration.value.match(/^var\(\s*(--[\w-]+)\s*\)$/)
+  if (!match?.[1]) return undefined
+
+  const prefix = varPrefixes[declaration.property]
+  if (prefix) return `${prefix}-(${match[1]})`
+
+  return undefined
+}
+
+const gradientDirections: Record<string, string> = {
+  'to right': 'bg-linear-to-r',
+  'to left': 'bg-linear-to-l',
+  'to top': 'bg-linear-to-t',
+  'to bottom': 'bg-linear-to-b',
+  'to top right': 'bg-linear-to-tr',
+  'to top left': 'bg-linear-to-tl',
+  'to bottom right': 'bg-linear-to-br',
+  'to bottom left': 'bg-linear-to-bl'
+}
+
+function convertGradient(
+  declaration: Declaration,
+  options: ResolvedOptions
+): string | string[] | undefined {
+  if (declaration.property !== 'background-image' && declaration.property !== 'background')
+    return undefined
+
+  const value = declaration.value.trim()
+  const linearMatch = value.match(/^linear-gradient\((.+)\)$/)
+  if (!linearMatch?.[1]) return undefined
+
+  const inner = linearMatch[1]
+  const firstComma = findTopLevelComma(inner)
+  if (firstComma === -1) return undefined
+
+  const directionPart = inner.slice(0, firstComma).trim()
+  const colorsPart = inner.slice(firstComma + 1).trim()
+
+  const dirClass =
+    gradientDirections[directionPart] ??
+    (directionPart.match(/^\d+deg$/) ? `bg-linear-${directionPart.replace('deg', '')}` : undefined)
+  if (!dirClass) return undefined
+
+  const colorStops = splitGradientStops(colorsPart)
+  if (colorStops.length < 2 || colorStops.length > 3) return undefined
+
+  const classes: string[] = [dirClass]
+
+  const fromColor = matchGradientColor(colorStops[0] ?? '', 'from', options)
+  if (!fromColor) return undefined
+  classes.push(fromColor)
+
+  if (colorStops.length === 3) {
+    const viaColor = matchGradientColor(colorStops[1] ?? '', 'via', options)
+    if (!viaColor) return undefined
+    classes.push(viaColor)
+  }
+
+  const toColor = matchGradientColor(colorStops[colorStops.length - 1] ?? '', 'to', options)
+  if (!toColor) return undefined
+  classes.push(toColor)
+
+  return classes
+}
+
+function matchGradientColor(
+  stop: string,
+  prefix: 'from' | 'via' | 'to',
+  options: ResolvedOptions
+): string | undefined {
+  const color = stop.trim().split(/\s+/)[0]
+  if (!color) return undefined
+
+  const normalized = normalizeColor(color)
+
+  const keyword = colorKeywords[normalized]
+  if (keyword) return `${prefix}-${keyword}`
+
+  const hexToken = lookupHexToken(normalized)
+  if (hexToken) return `${prefix}-${hexToken}`
+
+  const token = Object.entries(options.theme.colors).find(
+    ([, c]) => normalizeColor(c) === normalized
+  )?.[0]
+  if (token) return `${prefix}-${token}`
+
+  return `${prefix}-[${color}]`
+}
+
+function findTopLevelComma(value: string): number {
+  let depth = 0
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === '(') depth++
+    else if (value[i] === ')') depth--
+    else if (value[i] === ',' && depth === 0) return i
+  }
+  return -1
+}
+
+function splitGradientStops(value: string): string[] {
+  const stops: string[] = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === '(') depth++
+    else if (value[i] === ')') depth--
+    else if (value[i] === ',' && depth === 0) {
+      stops.push(value.slice(start, i).trim())
+      start = i + 1
+    }
+  }
+  stops.push(value.slice(start).trim())
+  return stops.filter(Boolean)
 }
 
 function converted(

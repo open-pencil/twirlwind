@@ -635,6 +635,29 @@ export const propertySamples: PropertySample[] = [
   { name: 'order numeric', style: { order: 2 }, expectedKind: 'exact' },
   { name: 'flex grow', style: { flexGrow: 1 }, expectedKind: 'exact' },
   { name: 'flex shrink zero', style: { flexShrink: 0 }, expectedKind: 'exact' },
+  { name: 'var reference color', style: { color: 'var(--brand)' }, expectedKind: 'exact' },
+  { name: 'var reference padding', style: { padding: 'var(--gutter)' }, expectedKind: 'exact' },
+  { name: 'calc width', style: { width: 'calc(100% - 2rem)' }, expectedKind: 'arbitrary-value' },
+  {
+    name: 'shadow sm scale',
+    style: { boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)' },
+    expectedKind: 'exact'
+  },
+  {
+    name: 'shadow inner',
+    style: { boxShadow: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)' },
+    expectedKind: 'exact'
+  },
+  {
+    name: 'gradient to right',
+    style: { backgroundImage: 'linear-gradient(to right, #ef4444, #3b82f6)' },
+    expectedKind: 'exact'
+  },
+  {
+    name: 'gradient three stops',
+    style: { backgroundImage: 'linear-gradient(to bottom, #ef4444, #22c55e, #3b82f6)' },
+    expectedKind: 'exact'
+  },
   { name: 'arbitrary width', style: { width: '37px' }, expectedKind: 'arbitrary-value' },
   {
     name: 'arbitrary background image',
