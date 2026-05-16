@@ -1,0 +1,60 @@
+{
+  "name": "twirlwind",
+  "version": "0.2.0",
+  "description": "Tailwind v4-first CSS style object to utility class serializer with lossless arbitrary-property fallback.",
+  "keywords": [
+    "converter",
+    "css",
+    "css-in-js",
+    "css-to-tailwind",
+    "style-object",
+    "styles",
+    "tailwind",
+    "tailwind-v4",
+    "tailwindcss",
+    "utility-classes"
+  ],
+  "homepage": "https://github.com/open-pencil/twirlwind#readme",
+  "bugs": "https://github.com/open-pencil/twirlwind/issues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/open-pencil/twirlwind"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/index.mjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "scripts": {
+    "test": "bun test --timeout 20000",
+    "typecheck": "tsgo --noEmit",
+    "lint": "oxlint",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "build": "tsdown src/index.ts --format esm --dts",
+    "prepublishOnly": "bun run lint && bun run format:check && bun test && bun run typecheck && bun run build",
+    "coverage:report": "bun scripts/report-coverage.ts"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.0",
+    "@types/bun": "latest",
+    "@typescript/native-preview": "^7.0.0-dev.20260512.1",
+    "mdn-data": "^2.28.1",
+    "oxfmt": "^0.49.0",
+    "oxlint": "^1.64.0",
+    "postcss": "^8.5.14",
+    "tailwindcss": "^4.3.0",
+    "tsdown": "^0.22.0",
+    "typescript": "^5.9.3"
+  }
+}
