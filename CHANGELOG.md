@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0
+
+### New features
+
+- **`var()` references** → Tailwind v4 variable syntax: `color: var(--brand)` → `text-(--brand)`
+- **Box shadow scale matching**: `box-shadow: 0 1px 3px ...` → `shadow-sm` (xs through 2xl + inner)
+- **Linear gradient parsing**: `linear-gradient(to right, #ef4444, #3b82f6)` → `bg-linear-to-r from-red-500 to-blue-500`
+- **Scrollbar utilities**: `scrollbar-width`, `scrollbar-gutter`, `scrollbar-color`
+- **Mask utilities**: `mask-type`, `mask-composite` exact mappings
+- **Perspective origin**: keyword and percentage positions
+- **Skew property**: individual `skew`/`skew-x`/`skew-y` CSS properties
+- **Font feature settings**: arbitrary prefix
+
 ## 0.2.0
 
 ### Breaking changes

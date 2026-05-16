@@ -1,6 +1,6 @@
 {
   "name": "twirlwind",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tailwind v4-first CSS style object to utility class serializer with lossless arbitrary-property fallback.",
   "keywords": [
     "converter",
