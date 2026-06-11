@@ -1,5 +1,8 @@
 # Twirlwind
 
+[![npm](https://img.shields.io/npm/v/twirlwind)](https://www.npmjs.com/package/twirlwind)
+[![CI](https://github.com/open-pencil/twirlwind/actions/workflows/ci.yml/badge.svg)](https://github.com/open-pencil/twirlwind/actions/workflows/ci.yml)
+
 Tailwind v4-first CSS-to-utility-class serializer for JavaScript/TypeScript.
 
 Converts style objects, CSS declaration strings, and `CSSStyleDeclaration` values into clean Tailwind utility classes. Prefers canonical utilities, falls back to arbitrary values, then arbitrary properties — every CSS property produces valid output.
@@ -144,6 +147,10 @@ twirl(input, {
 3. **Convert** — exact utility → value alias → spacing token → color match → arbitrary value → arbitrary property
 4. **Compress** — merge longhands back to shorthand utilities
 5. **Sort** — deterministic output ordering
+
+---
+
+Maintained as part of [OpenPencil](https://github.com/open-pencil) for the [OpenPencil editor](https://github.com/open-pencil/open-pencil).
 
 ## License
 
