@@ -1,4 +1,6 @@
+import { declarationList, valueNodes } from './css'
 import type { Declaration, StyleInput, StyleObject, StylePrimitive } from './types'
+import { containerVariants, mediaVariants, supportsVariants } from './variants'
 
 const unitlessProperties = new Set([
   'animation-iteration-count',
@@ -66,26 +68,17 @@ export function normalizeInput(input: StyleInput): Declaration[] {
 }
 
 function parseCssText(cssText: string): Declaration[] {
-  return cssText
-    .split(';')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const separator = part.indexOf(':')
-      if (separator === -1) return undefined
-
-      const property = part.slice(0, separator).trim()
-      const value = part.slice(separator + 1).trim()
-      return normalizeEntry(property, value)
-    })
-    .filter(Boolean) as Declaration[]
+  return declarationList(cssText).flatMap(({ property, value }) => {
+    const declaration = normalizeEntry(property, value)
+    return declaration ? [declaration] : []
+  })
 }
 
 function normalizeObject(input: StyleObject, variants: string[] = []): Declaration[] {
   return Object.entries(input).flatMap(([property, value]) => {
     if (isNestedStyle(value)) {
-      const variant = variantName(property)
-      return variant ? normalizeObject(value, [...variants, variant]) : []
+      const nested = variantNames(property)
+      return nested ? normalizeObject(value, [...variants, ...nested]) : []
     }
 
     const declaration = normalizeEntry(property, value)
@@ -93,37 +86,14 @@ function normalizeObject(input: StyleObject, variants: string[] = []): Declarati
   })
 }
 
-function variantName(key: string): string | undefined {
-  if (key === 'dark') return 'dark'
-  if (key.startsWith('&:')) return pseudoVariantName(key.slice(2))
-  if (key.startsWith(':')) return pseudoVariantName(key.slice(1))
-  if (key.startsWith('@media')) return mediaVariantName(key)
-  if (key.startsWith('@supports')) return `supports-[${key.slice(9).trim()}]`
-  if (key.startsWith('@container')) return containerVariantName(key)
+function variantNames(key: string): string[] | undefined {
+  if (key === 'dark') return ['dark']
+  if (key.startsWith('&:')) return [pseudoVariantName(key.slice(2))]
+  if (key.startsWith(':')) return [pseudoVariantName(key.slice(1))]
+  if (key.startsWith('@media')) return mediaVariants(key.slice('@media'.length))
+  if (key.startsWith('@supports')) return supportsVariants(key.slice('@supports'.length))
+  if (key.startsWith('@container')) return containerVariants(key.slice('@container'.length))
   return undefined
-}
-
-function containerVariantName(query: string): string {
-  const normalized = query.replace(/\s+/g, ' ').trim()
-  const sizeMatch = normalized.match(/@container\s*\(min-width:\s*(\d+)px\)/)
-  if (sizeMatch) {
-    const px = Number(sizeMatch[1])
-    const named: Record<number, string> = {
-      320: '@xs',
-      384: '@sm',
-      448: '@md',
-      512: '@lg',
-      576: '@xl',
-      672: '@2xl',
-      768: '@3xl',
-      896: '@4xl',
-      1024: '@5xl',
-      1152: '@6xl',
-      1280: '@7xl'
-    }
-    return named[px] ?? `@min-[${px}px]`
-  }
-  return `@container-[${normalized.replace(/^@container\s*/, '')}]`
 }
 
 function pseudoVariantName(pseudo: string): string {
@@ -131,28 +101,6 @@ function pseudoVariantName(pseudo: string): string {
     .replace(/^:/, '')
     .replace(/-child$/, '')
     .replace(/-of-type$/, '-of-type')
-}
-
-function mediaVariantName(query: string): string {
-  const normalized = query.replace(/\s+/g, ' ').trim()
-  if (/min-width:\s*640px/.test(normalized)) return 'sm'
-  if (/min-width:\s*768px/.test(normalized)) return 'md'
-  if (/min-width:\s*1024px/.test(normalized)) return 'lg'
-  if (/min-width:\s*1280px/.test(normalized)) return 'xl'
-  if (/min-width:\s*1536px/.test(normalized)) return '2xl'
-  if (/prefers-color-scheme:\s*dark/.test(normalized)) return 'dark'
-  if (/prefers-color-scheme:\s*light/.test(normalized)) return 'light'
-  if (/prefers-reduced-motion:\s*reduce/.test(normalized)) return 'motion-reduce'
-  if (/prefers-reduced-motion:\s*no-preference/.test(normalized)) return 'motion-safe'
-  if (/prefers-contrast:\s*more/.test(normalized)) return 'contrast-more'
-  if (/prefers-contrast:\s*less/.test(normalized)) return 'contrast-less'
-  if (/\(hover:\s*hover\)/.test(normalized)) return 'hover'
-  if (/\(pointer:\s*fine\)/.test(normalized)) return 'pointer-fine'
-  if (/\(pointer:\s*coarse\)/.test(normalized)) return 'pointer-coarse'
-  if (/print/.test(normalized)) return 'print'
-  if (/\(orientation:\s*portrait\)/.test(normalized)) return 'portrait'
-  if (/\(orientation:\s*landscape\)/.test(normalized)) return 'landscape'
-  return `media-[${normalized.replace(/^@media\s*/, '')}]`
 }
 
 function normalizeEntry(propertyName: string, primitive: StylePrimitive): Declaration | undefined {
@@ -186,11 +134,24 @@ function normalizeValue(
       ? `${primitive}px`
       : String(primitive).trim()
 
-  if (rawValue.endsWith('!important')) {
-    return { value: rawValue.slice(0, -10).trim(), important: true }
+  const priority = importantIndex(rawValue)
+  if (priority !== undefined) {
+    return { value: rawValue.slice(0, priority).trim(), important: true }
   }
 
   return { value: rawValue, important: false }
+}
+
+/** Where a trailing `!important` starts; inside a string or function it is part of the value. */
+function importantIndex(value: string): number | undefined {
+  const nodes = valueNodes(value)
+  const last = nodes.at(-1)
+  if (last?.type !== 'word') return undefined
+  if (last.value.toLowerCase() === '!important') return last.sourceIndex
+  const bang = nodes.at(-2)
+  if (last.value.toLowerCase() === 'important' && bang?.type === 'word' && bang.value === '!')
+    return bang.sourceIndex
+  return undefined
 }
 
 function createDeclaration(property: string, value: string, important: boolean): Declaration {

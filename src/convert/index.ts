@@ -1,4 +1,19 @@
 import { lookupHexToken } from '../colors'
+import {
+  canonical,
+  commaList,
+  dimension,
+  functionArguments,
+  functionCall,
+  functionList,
+  integer,
+  spaceList,
+  stringify,
+  valueNodes,
+  variableReference,
+  type FunctionNode,
+  type Node
+} from '../css'
 import { arbitraryProperty, arbitraryValue } from '../escape'
 import { parseThemeVariable, themeUtilities } from '../namespaces'
 import type { ConvertedDeclaration, Declaration, ResolvedOptions } from '../types'
@@ -15,11 +30,13 @@ export function convertDeclaration(
   const alias = valueAliases[declaration.property]?.[declaration.value.toLowerCase()]
   if (alias) return converted(declaration, alias, 'exact')
 
+  const lines = integer(declaration.value)
   if (
     (declaration.property === '-webkit-line-clamp' || declaration.property === 'line-clamp') &&
-    /^\d+$/.test(declaration.value)
+    lines !== undefined &&
+    lines >= 0
   ) {
-    return converted(declaration, `line-clamp-${declaration.value}`, 'exact')
+    return converted(declaration, `line-clamp-${lines}`, 'exact')
   }
 
   if (
@@ -32,11 +49,9 @@ export function convertDeclaration(
   const contentClass = convertContent(declaration)
   if (contentClass) return converted(declaration, contentClass, 'exact')
 
-  if (declaration.property === 'z-index' && /^-?\d+$/.test(declaration.value)) {
-    const value = declaration.value.startsWith('-')
-      ? `-z-${declaration.value.slice(1)}`
-      : `z-${declaration.value}`
-    return converted(declaration, value, 'exact')
+  const zIndex = declaration.property === 'z-index' ? integer(declaration.value) : undefined
+  if (zIndex !== undefined) {
+    return converted(declaration, signed('z', zIndex), 'exact')
   }
 
   const numericClass = convertNumericUtility(declaration)
@@ -127,26 +142,27 @@ function convertSpacingLike(
 }
 
 function convertNumericUtility(declaration: Declaration): string | undefined {
-  if (declaration.property === 'tab-size' && /^\d+$/.test(declaration.value)) {
-    return `tab-${declaration.value}`
+  const count = integer(declaration.value)
+
+  if (declaration.property === 'tab-size' && count !== undefined && count >= 0) {
+    return `tab-${count}`
   }
 
   if (declaration.property === 'zoom') {
-    const value = Number(declaration.value)
-    if (Number.isFinite(value) && value > 0) return `zoom-${value * 100}`
+    const zoom = dimension(declaration.value)
+    const percent =
+      zoom?.unit === '%' ? zoom.number : zoom?.unit === '' ? zoom.number * 100 : undefined
+    if (percent !== undefined && percent > 0 && Number.isInteger(percent)) return `zoom-${percent}`
   }
 
-  if (declaration.property === 'order' && /^-?\d+$/.test(declaration.value)) {
-    return declaration.value.startsWith('-')
-      ? `-order-${declaration.value.slice(1)}`
-      : `order-${declaration.value}`
-  }
+  if (declaration.property === 'order' && count !== undefined) return signed('order', count)
 
   if (
     (declaration.property === 'column-count' || declaration.property === 'columns') &&
-    /^\d+$/.test(declaration.value)
+    count !== undefined &&
+    count > 0
   ) {
-    return `columns-${declaration.value}`
+    return `columns-${count}`
   }
 
   const aspectRatio = convertAspectRatio(declaration)
@@ -161,16 +177,16 @@ function convertNumericUtility(declaration: Declaration): string | undefined {
   const gridTemplate = convertGridTemplate(declaration)
   if (gridTemplate) return gridTemplate
 
-  if (declaration.property === 'flex-grow' && /^[01]$/.test(declaration.value)) {
-    return declaration.value === '1' ? 'grow' : 'grow-0'
+  if (declaration.property === 'flex-grow' && (count === 0 || count === 1)) {
+    return count === 1 ? 'grow' : 'grow-0'
   }
 
-  if (declaration.property === 'flex-shrink' && /^[01]$/.test(declaration.value)) {
-    return declaration.value === '1' ? 'shrink' : 'shrink-0'
+  if (declaration.property === 'flex-shrink' && (count === 0 || count === 1)) {
+    return count === 1 ? 'shrink' : 'shrink-0'
   }
 
-  if (declaration.property === 'stroke-width' && /^\d+$/.test(declaration.value)) {
-    return `stroke-${declaration.value}`
+  if (declaration.property === 'stroke-width' && count !== undefined && count >= 0) {
+    return `stroke-${count}`
   }
 
   if (declaration.property === 'transition-duration') {
@@ -186,24 +202,31 @@ function convertNumericUtility(declaration: Declaration): string | undefined {
   return undefined
 }
 
+/** `-z-10` for `-10`: Tailwind puts the sign before the utility. */
+function signed(prefix: string, value: number): string {
+  return value < 0 ? `-${prefix}-${-value}` : `${prefix}-${value}`
+}
+
 function convertAspectRatio(declaration: Declaration): string | undefined {
   if (declaration.property !== 'aspect-ratio') return undefined
 
-  const ratio = declaration.value.match(/^(\d+)\s*\/\s*(\d+)$/)
-  if (!ratio) return undefined
+  const [width, slash, height, ...rest] = valueNodes(declaration.value)
+  if (rest.length > 0 || slash?.type !== 'div' || slash.value !== '/') return undefined
+  const w = width && integer(stringify(width))
+  const h = height && integer(stringify(height))
+  if (!w || !h || w < 0 || h < 0) return undefined
 
-  const [, width, height] = ratio
-  if (width === height) return 'aspect-square'
-  if (width === '16' && height === '9') return 'aspect-video'
-  return `aspect-${width}/${height}`
+  if (w === h) return 'aspect-square'
+  if (w === 16 && h === 9) return 'aspect-video'
+  return `aspect-${w}/${h}`
 }
 
 function convertSnapType(declaration: Declaration): string | string[] | undefined {
   if (declaration.property !== 'scroll-snap-type') return undefined
   if (declaration.value === 'none') return 'snap-none'
 
-  const parts = declaration.value.trim().toLowerCase().split(/\s+/)
-  if (parts.length !== 2) return undefined
+  const parts = spaceList(declaration.value.toLowerCase())
+  if (parts?.length !== 2) return undefined
 
   const axes: Record<string, string> = {
     x: 'snap-x',
@@ -224,14 +247,16 @@ function convertSnapType(declaration: Declaration): string | string[] | undefine
   return [axisClass, strictClass]
 }
 
+/** A plain string; one with spaces or escapes goes to the arbitrary property, which escapes it. */
 function convertContent(declaration: Declaration): string | undefined {
   if (declaration.property !== 'content') return undefined
   if (declaration.value === 'none') return 'content-none'
 
-  const quoted = declaration.value.match(/^["'](.+)["']$/)?.[1]
-  if (quoted) return `content-['${quoted.replace(/'/g, "\\'")}']`
-
-  return undefined
+  const nodes = valueNodes(declaration.value)
+  const [node] = nodes
+  if (nodes.length !== 1 || node?.type !== 'string' || !node.value) return undefined
+  if (/[\s_\]\\]/.test(node.value)) return undefined
+  return `content-['${node.value.replaceAll("'", "\\'")}']`
 }
 
 function convertGridLine(declaration: Declaration): string | undefined {
@@ -242,50 +267,54 @@ function convertGridLine(declaration: Declaration): string | undefined {
     'grid-row-end': 'row-end'
   }
   const prefix = prefixes[declaration.property]
-  if (!prefix || !/^-?\d+$/.test(declaration.value)) return undefined
-
-  return declaration.value.startsWith('-')
-    ? `-${prefix}-${declaration.value.slice(1)}`
-    : `${prefix}-${declaration.value}`
+  const line = integer(declaration.value)
+  return prefix && line !== undefined ? signed(prefix, line) : undefined
 }
 
+/** `1 / -1` spans the grid; `span 3 / span 3` is what `col-span-3` writes. */
 function convertGridPlacement(declaration: Declaration): string | undefined {
-  if (declaration.value === '1 / -1') {
-    if (declaration.property === 'grid-column') return 'col-span-full'
-    if (declaration.property === 'grid-row') return 'row-span-full'
+  const prefix =
+    declaration.property === 'grid-column'
+      ? 'col-span'
+      : declaration.property === 'grid-row'
+        ? 'row-span'
+        : undefined
+  if (!prefix) return undefined
+
+  const [start, end, ...rest] = commaList(declaration.value.replaceAll('/', ','))
+  if (rest.length > 0 || !start || !end) return undefined
+  if (integer(start) === 1 && integer(end) === -1) return `${prefix}-full`
+
+  const span = (part: string) => {
+    const [keyword, count] = spaceList(part) ?? []
+    return keyword === 'span' && count ? integer(count) : undefined
   }
-
-  const span = declaration.value.match(/^span (\d+) \/ span \d+$/)?.[1]
-  if (!span) return undefined
-
-  if (declaration.property === 'grid-column') return `col-span-${span}`
-  if (declaration.property === 'grid-row') return `row-span-${span}`
-  return undefined
+  const count = span(start)
+  return count !== undefined && count > 0 && span(end) === count ? `${prefix}-${count}` : undefined
 }
 
+/** `repeat(3, minmax(0, 1fr))` is what `grid-cols-3` writes. */
 function convertGridTemplate(declaration: Declaration): string | undefined {
-  const count = declaration.value.match(/^repeat\((\d+), minmax\(0, 1fr\)\)$/)?.[1]
-  if (!count) return undefined
+  const prefix =
+    declaration.property === 'grid-template-columns'
+      ? 'grid-cols'
+      : declaration.property === 'grid-template-rows'
+        ? 'grid-rows'
+        : undefined
+  const call = prefix ? functionCall(declaration.value) : undefined
+  if (call?.value.toLowerCase() !== 'repeat') return undefined
 
-  if (declaration.property === 'grid-template-columns') return `grid-cols-${count}`
-  if (declaration.property === 'grid-template-rows') return `grid-rows-${count}`
-  return undefined
+  const [count, track, ...rest] = commaList(functionArguments(call))
+  const columns = count ? integer(count) : undefined
+  if (rest.length > 0 || !track || canonical(track) !== 'minmax(0,1fr)') return undefined
+  return columns !== undefined && columns > 0 ? `${prefix}-${columns}` : undefined
 }
 
 function millisecondsValue(value: string): number | undefined {
-  const normalized = value.trim().toLowerCase()
-  if (normalized.endsWith('ms')) {
-    const parsed = Number(normalized.slice(0, -2))
-    return Number.isInteger(parsed) ? parsed : undefined
-  }
-
-  if (normalized.endsWith('s')) {
-    const parsed = Number(normalized.slice(0, -1))
-    const milliseconds = parsed * 1000
-    return Number.isInteger(milliseconds) ? milliseconds : undefined
-  }
-
-  return undefined
+  const time = dimension(value)
+  const milliseconds =
+    time?.unit === 'ms' ? time.number : time?.unit === 's' ? time.number * 1000 : undefined
+  return milliseconds !== undefined && Number.isInteger(milliseconds) ? milliseconds : undefined
 }
 
 function convertBorderWidth(declaration: Declaration): string | undefined {
@@ -301,22 +330,23 @@ function convertBorderWidth(declaration: Declaration): string | undefined {
     'border-block-width': 'border-y'
   }
   const prefix = prefixes[declaration.property]
-  if (!prefix) return undefined
+  const width = prefix ? dimension(declaration.value) : undefined
+  if (!width || (width.unit !== 'px' && !(width.unit === '' && width.number === 0)))
+    return undefined
 
-  const normalized = declaration.value.trim().toLowerCase()
-  if (normalized === '1px') return prefix
-  if (normalized === '0' || normalized === '0px') return `${prefix}-0`
-  const width = normalized.match(/^(2|4|8)px$/)?.[1]
-  return width ? `${prefix}-${width}` : undefined
+  if (width.number === 1) return prefix
+  if (width.number === 0) return `${prefix}-0`
+  return [2, 4, 8].includes(width.number) ? `${prefix}-${width.number}` : undefined
 }
 
 function convertOpacity(declaration: Declaration): string | undefined {
   if (declaration.property !== 'opacity') return undefined
-  const value = Number(declaration.value)
-  if (!Number.isFinite(value) || value < 0 || value > 1) return undefined
-  const percent = value * 100
-  if (!Number.isInteger(percent)) return undefined
-  return `opacity-${percent}`
+  const opacity = dimension(declaration.value)
+  const percent =
+    opacity?.unit === '%' ? opacity.number : opacity?.unit === '' ? opacity.number * 100 : undefined
+  if (percent === undefined || percent < 0 || percent > 100) return undefined
+  const rounded = Math.round(percent * 1e6) / 1e6
+  return Number.isInteger(rounded) ? `opacity-${rounded}` : undefined
 }
 
 const colorAliases: Record<string, string> = {
@@ -374,61 +404,67 @@ function convertColor(declaration: Declaration, options: ResolvedOptions): strin
   return undefined
 }
 
+type Rgb = { r: number; g: number; b: number; alpha?: number }
+
+/** A color function's channels and its alpha after `/` or a fourth comma argument. */
+function splitAlpha(value: string): { name: string; base: string; alpha?: number } | undefined {
+  const call = functionCall(value)
+  if (!call) return undefined
+  const isDivider = (node: Node, divider: string) => node.type === 'div' && node.value === divider
+  const slash = call.nodes.findIndex((node) => isDivider(node, '/'))
+  const commas = call.nodes.flatMap((node, index) => (isDivider(node, ',') ? [index] : []))
+  const split = slash !== -1 ? slash : commas.length === 3 ? commas[2] : undefined
+  const channels = split === undefined ? call.nodes : call.nodes.slice(0, split)
+  const alphaNodes = split === undefined ? [] : call.nodes.slice(split + 1)
+  const alpha = alphaNodes.length > 0 ? dimension(stringify(alphaNodes)) : undefined
+  if (alphaNodes.length > 0 && (!alpha || (alpha.unit !== '' && alpha.unit !== '%')))
+    return undefined
+  return {
+    name: call.value.toLowerCase(),
+    base: stringify(channels),
+    alpha: alpha && (alpha.unit === '%' ? alpha.number / 100 : alpha.number)
+  }
+}
+
+function parseRgb(value: string): Rgb | undefined {
+  const split = splitAlpha(value)
+  if (split?.name !== 'rgb' && split?.name !== 'rgba') return undefined
+  const channels = valueNodes(split.base)
+    .filter((node) => node.type === 'word')
+    .map((node) => integer(node.value))
+  const [r, g, b] = channels
+  if (channels.length !== 3 || r === undefined || g === undefined || b === undefined)
+    return undefined
+  return { r, g, b, alpha: split.alpha }
+}
+
+/** `rgb(…/0.5)` or `oklch(…/50%)` of a theme color is that color with an opacity modifier. */
 function parseColorWithOpacity(value: string, options: ResolvedOptions): string | undefined {
-  const oklchMatch = value.match(/^oklch\(([^/]+)\/\s*([\d.]+)%?\s*\)$/)
-  if (oklchMatch) {
-    const [, colorPart, alpha] = oklchMatch
-    if (!colorPart || !alpha) return undefined
-    const baseColor = `oklch(${colorPart.trim()})`
-    const baseNormalized = normalizeColor(baseColor)
-    const token = Object.entries(options.theme.colors).find(
-      ([, c]) => normalizeColor(c) === baseNormalized
-    )?.[0]
-    if (!token) return undefined
-    const opacity = Math.round(Number(alpha))
-    return `${token}/${opacity}`
-  }
-
-  const rgbaMatch = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/)
-  if (rgbaMatch) {
-    const [, r, g, b, a] = rgbaMatch
-    if (!r || !g || !b || !a) return undefined
-    const baseHex = `#${Number(r).toString(16).padStart(2, '0')}${Number(g).toString(16).padStart(2, '0')}${Number(b).toString(16).padStart(2, '0')}`
-    const baseNormalized = normalizeColor(baseHex)
-    const token = Object.entries(options.theme.colors).find(
-      ([, c]) => normalizeColor(c) === baseNormalized
-    )?.[0]
-    if (!token) return undefined
-    const opacity = Math.round(Number(a) * 100)
-    return `${token}/${opacity}`
-  }
-
-  return undefined
+  const split = splitAlpha(value)
+  if (split?.alpha === undefined) return undefined
+  const rgb = parseRgb(value)
+  const base = rgb ? hex(rgb) : canonical(`${split.name}(${split.base})`)
+  const token = Object.entries(options.theme.colors).find(
+    ([, color]) => normalizeColor(color) === base
+  )?.[0]
+  const opacity = split.alpha * 100
+  if (!token || !Number.isInteger(Math.round(opacity * 1e6) / 1e6)) return undefined
+  return `${token}/${Math.round(opacity)}`
 }
 
 function normalizeColor(value: string): string {
-  const normalized = value.trim().toLowerCase()
+  const normalized = canonical(value)
   const alias = colorAliases[normalized]
   if (alias) return alias.toLowerCase()
 
-  const rgbToHex = rgbFunctionToHex(normalized)
-  if (rgbToHex) return rgbToHex
+  const rgb = parseRgb(normalized)
+  if (rgb && rgb.alpha === undefined) return hex(rgb)
 
   return normalized
 }
 
-function rgbFunctionToHex(value: string): string | undefined {
-  const match = value.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/)
-  if (!match) {
-    const modern = value.match(/^rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\)$/)
-    if (!modern) return undefined
-    const [, r, g, b] = modern
-    if (!r || !g || !b) return undefined
-    return `#${toHex(Number(r))}${toHex(Number(g))}${toHex(Number(b))}`
-  }
-  const [, r, g, b] = match
-  if (!r || !g || !b) return undefined
-  return `#${toHex(Number(r))}${toHex(Number(g))}${toHex(Number(b))}`
+function hex({ r, g, b }: Rgb): string {
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
 
 function toHex(n: number): string {
@@ -442,122 +478,62 @@ function convertFilter(declaration: Declaration): string | string[] | undefined 
     return undefined
 
   const prefix = declaration.property === 'backdrop-filter' ? 'backdrop-' : ''
-  const value = declaration.value.trim().toLowerCase()
+  const calls = functionList(declaration.value)
+  if (!calls) return undefined
 
-  const blur = value.match(/^blur\(([^)]+)\)$/)?.[1]
-  if (blur === '8px') return `${prefix}blur`
-  if (blur) return `${prefix}blur-[${blur}]`
+  // Every function must convert: a partial list would drop the filters left out.
+  const classes = calls.map((call) => filterClass(call, prefix))
+  if (classes.some((cls) => cls === undefined)) return undefined
+  const result = classes as string[]
+  return result.length === 1 ? result[0] : result
+}
 
-  const brightness = value.match(/^brightness\(([^)]+)\)$/)?.[1]
-  if (brightness) return percentageFilterClass(`${prefix}brightness`, brightness)
+const percentageFilters = new Set([
+  'brightness',
+  'contrast',
+  'grayscale',
+  'invert',
+  'saturate',
+  'sepia'
+])
 
-  const contrast = value.match(/^contrast\(([^)]+)\)$/)?.[1]
-  if (contrast) return percentageFilterClass(`${prefix}contrast`, contrast)
+function filterClass(call: FunctionNode, prefix: string): string | undefined {
+  const name = call.value.toLowerCase()
+  const argument = functionArguments(call)
 
-  const grayscale = value.match(/^grayscale\(([^)]+)\)$/)?.[1]
-  if (grayscale) return percentageFilterClass(`${prefix}grayscale`, grayscale)
-
-  const invert = value.match(/^invert\(([^)]+)\)$/)?.[1]
-  if (invert) return percentageFilterClass(`${prefix}invert`, invert)
-
-  const saturate = value.match(/^saturate\(([^)]+)\)$/)?.[1]
-  if (saturate) return percentageFilterClass(`${prefix}saturate`, saturate)
-
-  const sepia = value.match(/^sepia\(([^)]+)\)$/)?.[1]
-  if (sepia) return percentageFilterClass(`${prefix}sepia`, sepia)
-
-  const hueRotate = value.match(/^hue-rotate\((-?\d+(?:\.\d+)?deg)\)$/)?.[1]
-  if (hueRotate) {
-    const rotate = rotateClass(hueRotate)
-    return rotate
-      ?.replace('rotate-', `${prefix}hue-rotate-`)
-      .replace('-rotate-', `-${prefix}hue-rotate-`)
+  if (name === 'blur') {
+    return argument === '8px' ? `${prefix}blur` : arbitraryValue(`${prefix}blur`, argument)
   }
-
-  const opacity = value.match(/^opacity\(([^)]+)\)$/)?.[1]
-  if (opacity && prefix === 'backdrop-') return percentageFilterClass('backdrop-opacity', opacity)
-
-  const dropShadow = value.match(/^drop-shadow\((.+)\)$/)?.[1]
-  if (dropShadow && prefix === '') return dropShadowClass(dropShadow)
-
-  const multi = parseMultiFilter(value, prefix)
-  if (multi && multi.length > 0) return multi.length === 1 ? multi[0] : multi
-
+  if (percentageFilters.has(name)) return percentageFilterClass(`${prefix}${name}`, argument)
+  if (name === 'hue-rotate') return angleClass(`${prefix}hue-rotate`, argument)
+  if (name === 'opacity' && prefix === 'backdrop-') {
+    return percentageFilterClass('backdrop-opacity', argument)
+  }
+  if (name === 'drop-shadow' && prefix === '') return dropShadowValues[canonical(argument)]
   return undefined
 }
 
-function parseMultiFilter(value: string, prefix: string): string[] | undefined {
-  const functions = value.match(/[a-z-]+\([^)]+\)/gi)
-  if (!functions || functions.length < 2) return undefined
-
-  const classes: string[] = []
-  for (const fn of functions) {
-    const cls = parseSingleFilter(fn.toLowerCase(), prefix)
-    if (cls) classes.push(cls)
-  }
-  return classes.length >= 2 ? classes : undefined
-}
-
-function parseSingleFilter(fn: string, prefix: string): string | undefined {
-  const blur = fn.match(/^blur\(([^)]+)\)$/)?.[1]
-  if (blur === '8px') return `${prefix}blur`
-  if (blur) return `${prefix}blur-[${blur}]`
-
-  const brightness = fn.match(/^brightness\(([^)]+)\)$/)?.[1]
-  if (brightness) return percentageFilterClass(`${prefix}brightness`, brightness)
-
-  const contrast = fn.match(/^contrast\(([^)]+)\)$/)?.[1]
-  if (contrast) return percentageFilterClass(`${prefix}contrast`, contrast)
-
-  const grayscale = fn.match(/^grayscale\(([^)]+)\)$/)?.[1]
-  if (grayscale) return percentageFilterClass(`${prefix}grayscale`, grayscale)
-
-  const saturate = fn.match(/^saturate\(([^)]+)\)$/)?.[1]
-  if (saturate) return percentageFilterClass(`${prefix}saturate`, saturate)
-
-  const sepia = fn.match(/^sepia\(([^)]+)\)$/)?.[1]
-  if (sepia) return percentageFilterClass(`${prefix}sepia`, sepia)
-
-  const invert = fn.match(/^invert\(([^)]+)\)$/)?.[1]
-  if (invert) return percentageFilterClass(`${prefix}invert`, invert)
-
-  const hueRotate = fn.match(/^hue-rotate\((-?\d+(?:\.\d+)?deg)\)$/)?.[1]
-  if (hueRotate) {
-    const rotate = rotateClass(hueRotate)
-    return rotate
-      ?.replace('rotate-', `${prefix}hue-rotate-`)
-      .replace('-rotate-', `-${prefix}hue-rotate-`)
-  }
-
-  return undefined
-}
-
-const dropShadowValues: Record<string, string> = {
+const dropShadowValues = byCanonicalKey({
   '0 1px 1px rgb(0 0 0 / 0.05)': 'drop-shadow-xs',
   '0 1px 2px rgb(0 0 0 / 0.15)': 'drop-shadow-sm',
   '0 3px 3px rgb(0 0 0 / 0.12)': 'drop-shadow-md',
   '0 4px 4px rgb(0 0 0 / 0.15)': 'drop-shadow-lg',
   '0 9px 7px rgb(0 0 0 / 0.1)': 'drop-shadow-xl',
   '0 25px 25px rgb(0 0 0 / 0.15)': 'drop-shadow-2xl'
-}
-
-function dropShadowClass(raw: string): string | undefined {
-  return dropShadowValues[raw.trim().replace(/\s+/g, ' ')]
-}
+})
 
 function percentageFilterClass(prefix: string, raw: string): string | undefined {
-  const normalized = raw.trim()
-  const value = normalized.endsWith('%')
-    ? Number(normalized.slice(0, -1))
-    : Number(normalized) * 100
-  if (!Number.isFinite(value)) return undefined
-  if (!Number.isInteger(value)) return `${prefix}-[${normalized}]`
+  const amount = dimension(raw)
+  if (!amount || (amount.unit !== '%' && amount.unit !== '')) return undefined
+  const value = amount.unit === '%' ? amount.number : amount.number * 100
+  if (!Number.isInteger(Math.round(value * 1e6) / 1e6)) return arbitraryValue(prefix, raw)
+  const percent = Math.round(value)
   if (
-    value === 100 &&
+    percent === 100 &&
     (prefix.endsWith('grayscale') || prefix.endsWith('invert') || prefix.endsWith('sepia'))
   )
     return prefix
-  return `${prefix}-${value}`
+  return `${prefix}-${percent}`
 }
 
 function convertTransform(
@@ -583,49 +559,47 @@ function convertTransform(
   return undefined
 }
 
-type TransformParser = {
-  pattern: RegExp
-  convert: (match: string, options: ResolvedOptions) => string | undefined
+/**
+ * Tailwind applies `translate`, `rotate` and `scale` as their own properties, in that order, then
+ * `transform` with rotations about each axis and skews. A transform list converts only when its
+ * functions already appear in that order, each step once, so the classes compose the same matrix.
+ */
+const transformSteps: Record<
+  string,
+  { step: number; convert: (argument: string, options: ResolvedOptions) => string | undefined }
+> = {
+  translatex: { step: 0, convert: (a, o) => translateAxisClass('translate-x', a, o) },
+  translatey: { step: 1, convert: (a, o) => translateAxisClass('translate-y', a, o) },
+  translatez: { step: 2, convert: (a, o) => translateAxisClass('translate-z', a, o) },
+  rotate: { step: 3, convert: (a) => rotateClass(a) },
+  scale: { step: 4, convert: (a) => scaleClass(a) },
+  scalex: { step: 5, convert: (a) => scaleClass(a, 'scale-x') },
+  scaley: { step: 6, convert: (a) => scaleClass(a, 'scale-y') },
+  scalez: { step: 7, convert: (a) => scaleClass(a, 'scale-z') },
+  rotatex: { step: 8, convert: (a) => angleClass('rotate-x', a) },
+  rotatey: { step: 9, convert: (a) => angleClass('rotate-y', a) },
+  rotatez: { step: 10, convert: (a) => angleClass('rotate-z', a) },
+  skewx: { step: 11, convert: (a) => angleClass('skew-x', a) },
+  skewy: { step: 12, convert: (a) => angleClass('skew-y', a) }
 }
-
-const transformParsers: TransformParser[] = [
-  { pattern: /rotate\((-?\d+(?:\.\d+)?deg)\)/i, convert: (m) => rotateClass(m) },
-  { pattern: /rotateX\((-?\d+(?:\.\d+)?deg)\)/i, convert: (m) => angleClass('rotate-x', m) },
-  { pattern: /rotateY\((-?\d+(?:\.\d+)?deg)\)/i, convert: (m) => angleClass('rotate-y', m) },
-  { pattern: /rotateZ\((-?\d+(?:\.\d+)?deg)\)/i, convert: (m) => angleClass('rotate-z', m) },
-  { pattern: /scale\((-?\d+(?:\.\d+)?)\)/i, convert: (m) => scaleClass(m) },
-  { pattern: /scaleX\((-?\d+(?:\.\d+)?)\)/i, convert: (m) => scaleClass(m, 'scale-x') },
-  { pattern: /scaleY\((-?\d+(?:\.\d+)?)\)/i, convert: (m) => scaleClass(m, 'scale-y') },
-  { pattern: /scaleZ\((-?\d+(?:\.\d+)?)\)/i, convert: (m) => scaleClass(m, 'scale-z') },
-  {
-    pattern: /translateX\(([^)]+)\)/i,
-    convert: (m, o) => translateAxisClass('translate-x', m, o)
-  },
-  {
-    pattern: /translateY\(([^)]+)\)/i,
-    convert: (m, o) => translateAxisClass('translate-y', m, o)
-  },
-  {
-    pattern: /translateZ\(([^)]+)\)/i,
-    convert: (m, o) => translateAxisClass('translate-z', m, o)
-  },
-  { pattern: /skewX\((-?\d+(?:\.\d+)?deg)\)/i, convert: (m) => angleClass('skew-x', m) },
-  { pattern: /skewY\((-?\d+(?:\.\d+)?deg)\)/i, convert: (m) => angleClass('skew-y', m) }
-]
 
 function transformClassMulti(
   value: string,
   options: ResolvedOptions
 ): string | string[] | undefined {
+  const calls = functionList(value)
+  if (!calls) return undefined
+
   const classes: string[] = []
-  for (const parser of transformParsers) {
-    const match = value.match(parser.pattern)
-    if (match?.[1]) {
-      const cls = parser.convert(match[1], options)
-      if (cls) classes.push(cls)
-    }
+  let previous = -1
+  for (const call of calls) {
+    const step = transformSteps[call.value.toLowerCase()]
+    if (!step || step.step <= previous) return undefined
+    const cls = step.convert(functionArguments(call), options)
+    if (!cls) return undefined
+    classes.push(cls)
+    previous = step.step
   }
-  if (classes.length === 0) return undefined
   return classes.length === 1 ? classes[0] : classes
 }
 
@@ -634,20 +608,18 @@ function rotateClass(value: string): string | undefined {
 }
 
 function angleClass(prefix: string, value: string): string | undefined {
-  const normalized = value.trim().toLowerCase()
-  if (!normalized.endsWith('deg')) return undefined
+  const angle = dimension(value)
+  if (angle?.unit !== 'deg') return undefined
 
-  const degrees = Number(normalized.slice(0, -3))
-  if (!Number.isFinite(degrees)) return undefined
-
-  const absolute = Math.abs(degrees)
+  const absolute = Math.abs(angle.number)
   const token = Number.isInteger(absolute) ? String(absolute) : `[${absolute}deg]`
-  return degrees < 0 ? `-${prefix}-${token}` : `${prefix}-${token}`
+  return angle.number < 0 ? `-${prefix}-${token}` : `${prefix}-${token}`
 }
 
 function translateClass(value: string, options: ResolvedOptions): string | undefined {
-  const [x, y = x] = value.trim().split(/\s+/)
-  if (!x || y !== x) return undefined
+  const parts = spaceList(value)
+  const [x, y = x] = parts ?? []
+  if (!parts || parts.length > 2 || !x || y !== x) return undefined
   return translateAxisClass('translate', x, options)
 }
 
@@ -662,16 +634,17 @@ function translateAxisClass(
 }
 
 function scaleClass(value: string, prefix = 'scale'): string | undefined {
-  const scale = Number(value.trim())
-  if (!Number.isFinite(scale)) return undefined
+  const scale = dimension(value)
+  if (!scale || (scale.unit !== '' && scale.unit !== '%')) return undefined
 
-  const percent = scale * 100
-  if (!Number.isInteger(percent)) return `${prefix}-[${value.trim()}]`
+  const percent = scale.unit === '%' ? scale.number : scale.number * 100
+  const rounded = Math.round(percent * 1e6) / 1e6
+  if (!Number.isInteger(rounded)) return arbitraryValue(prefix, value)
 
-  return percent < 0 ? `-${prefix}-${Math.abs(percent)}` : `${prefix}-${percent}`
+  return rounded < 0 ? `-${prefix}-${Math.abs(rounded)}` : `${prefix}-${rounded}`
 }
 
-const shadowValues: Record<string, string> = {
+const shadowValues = byCanonicalKey({
   '0 1px 2px 0 rgb(0 0 0 / 0.05)': 'shadow-xs',
   '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)': 'shadow-sm',
   '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)': 'shadow-md',
@@ -679,11 +652,16 @@ const shadowValues: Record<string, string> = {
   '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)': 'shadow-xl',
   '0 25px 50px -12px rgb(0 0 0 / 0.25)': 'shadow-2xl',
   'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)': 'shadow-inner'
-}
+})
 
 function convertShadow(declaration: Declaration): string | undefined {
   if (declaration.property !== 'box-shadow') return undefined
-  return shadowValues[declaration.value.trim().replace(/\s+/g, ' ')]
+  return shadowValues[canonical(declaration.value)]
+}
+
+/** Scale tables keyed by `canonical()`, so spacing and case in the input do not matter. */
+function byCanonicalKey(table: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(table).map(([key, value]) => [canonical(key), value]))
 }
 
 const varPrefixes: Record<string, string> = {
@@ -732,7 +710,7 @@ function convertThemeVariable(
   declaration: Declaration,
   options: ResolvedOptions
 ): string | undefined {
-  const name = declaration.value.match(/^var\(\s*(--[\w.-]+)\s*\)$/)?.[1]
+  const name = variableReference(declaration.value)
   if (!name || !options.theme.variables.has(name)) return undefined
   const utility = themeUtilities[declaration.property]
   const variable = parseThemeVariable(name)
@@ -741,13 +719,9 @@ function convertThemeVariable(
 }
 
 function convertVarReference(declaration: Declaration): string | undefined {
-  const match = declaration.value.match(/^var\(\s*(--[\w-]+)\s*\)$/)
-  if (!match?.[1]) return undefined
-
+  const name = variableReference(declaration.value)
   const prefix = varPrefixes[declaration.property]
-  if (prefix) return `${prefix}-(${match[1]})`
-
-  return undefined
+  return name && prefix ? `${prefix}-(${name})` : undefined
 }
 
 const gradientDirections: Record<string, string> = {
@@ -761,6 +735,10 @@ const gradientDirections: Record<string, string> = {
   'to bottom left': 'bg-linear-to-bl'
 }
 
+/**
+ * `linear-gradient(to right, red, blue)` with two or three plain stops. A stop with a position
+ * keeps the arbitrary value, since `from`/`via`/`to` alone would drop it.
+ */
 function convertGradient(
   declaration: Declaration,
   options: ResolvedOptions
@@ -768,42 +746,31 @@ function convertGradient(
   if (declaration.property !== 'background-image' && declaration.property !== 'background')
     return undefined
 
-  const value = declaration.value.trim()
-  const linearMatch = value.match(/^linear-gradient\((.+)\)$/)
-  if (!linearMatch?.[1]) return undefined
+  const call = functionCall(declaration.value)
+  if (call?.value.toLowerCase() !== 'linear-gradient') return undefined
 
-  const inner = linearMatch[1]
-  const firstComma = findTopLevelComma(inner)
-  if (firstComma === -1) return undefined
+  const [direction, ...stops] = commaList(functionArguments(call))
+  if (!direction || stops.length < 2 || stops.length > 3) return undefined
 
-  const directionPart = inner.slice(0, firstComma).trim()
-  const colorsPart = inner.slice(firstComma + 1).trim()
-
+  const angle = dimension(direction)
   const dirClass =
-    gradientDirections[directionPart] ??
-    (directionPart.match(/^\d+deg$/) ? `bg-linear-${directionPart.replace('deg', '')}` : undefined)
+    gradientDirections[canonical(direction)] ??
+    (angle?.unit === 'deg' && Number.isInteger(angle.number) && angle.number >= 0
+      ? `bg-linear-${angle.number}`
+      : undefined)
   if (!dirClass) return undefined
 
-  const colorStops = splitGradientStops(colorsPart)
-  if (colorStops.length < 2 || colorStops.length > 3) return undefined
-
-  const classes: string[] = [dirClass]
-
-  const fromColor = matchGradientColor(colorStops[0] ?? '', 'from', options)
-  if (!fromColor) return undefined
-  classes.push(fromColor)
-
-  if (colorStops.length === 3) {
-    const viaColor = matchGradientColor(colorStops[1] ?? '', 'via', options)
-    if (!viaColor) return undefined
-    classes.push(viaColor)
-  }
-
-  const toColor = matchGradientColor(colorStops[colorStops.length - 1] ?? '', 'to', options)
-  if (!toColor) return undefined
-  classes.push(toColor)
-
-  return classes
+  const prefixes: Array<'from' | 'via' | 'to'> =
+    stops.length === 3 ? ['from', 'via', 'to'] : ['from', 'to']
+  const classes = stops.map((stop, index) => {
+    const parts = spaceList(stop)
+    const prefix = prefixes[index]
+    return parts?.length === 1 && parts[0] && prefix
+      ? matchGradientColor(parts[0], prefix, options)
+      : undefined
+  })
+  if (classes.some((cls) => cls === undefined)) return undefined
+  return [dirClass, ...(classes as string[])]
 }
 
 function matchGradientColor(
@@ -811,9 +778,7 @@ function matchGradientColor(
   prefix: 'from' | 'via' | 'to',
   options: ResolvedOptions
 ): string | undefined {
-  const color = stop.trim().split(/\s+/)[0]
-  if (!color) return undefined
-
+  const color = stop.trim()
   const normalized = normalizeColor(color)
 
   const keyword = colorKeywords[normalized]
@@ -827,33 +792,7 @@ function matchGradientColor(
   )?.[0]
   if (token) return `${prefix}-${token}`
 
-  return `${prefix}-[${color}]`
-}
-
-function findTopLevelComma(value: string): number {
-  let depth = 0
-  for (let i = 0; i < value.length; i++) {
-    if (value[i] === '(') depth++
-    else if (value[i] === ')') depth--
-    else if (value[i] === ',' && depth === 0) return i
-  }
-  return -1
-}
-
-function splitGradientStops(value: string): string[] {
-  const stops: string[] = []
-  let depth = 0
-  let start = 0
-  for (let i = 0; i < value.length; i++) {
-    if (value[i] === '(') depth++
-    else if (value[i] === ')') depth--
-    else if (value[i] === ',' && depth === 0) {
-      stops.push(value.slice(start, i).trim())
-      start = i + 1
-    }
-  }
-  stops.push(value.slice(start).trim())
-  return stops.filter(Boolean)
+  return arbitraryValue(prefix, color)
 }
 
 function converted(
