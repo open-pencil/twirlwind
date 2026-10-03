@@ -1,5 +1,13 @@
+import {
+  commaList,
+  dimension,
+  functionCall,
+  isDimension,
+  spaceList,
+  stringify,
+  valueNodes
+} from './css'
 import type { Declaration } from './types'
-import { splitCssValueList } from './value'
 
 const boxShorthands: Record<string, [string, string, string, string]> = {
   margin: ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
@@ -113,133 +121,191 @@ export function expandShorthands(declarations: Declaration[]): Declaration[] {
   })
 }
 
+const imageFunctions =
+  /^(url|image|image-set|cross-fade|element|(repeating-)?(linear|radial|conic)-gradient)$/i
+
+function isImage(part: string): boolean {
+  const call = functionCall(part)
+  return part === 'none' || (call !== undefined && imageFunctions.test(call.value))
+}
+
+/**
+ * Assign each part to a longhand; a part no rule claims, or a longhand claimed twice, keeps the
+ * shorthand. Longhands in `multiple` take several parts, joined, as `center top` does.
+ */
+function classifyParts(
+  declaration: Declaration,
+  parts: string[] | undefined,
+  rules: Array<[property: string, matches: (part: string) => boolean]>,
+  rest?: string,
+  multiple: ReadonlySet<string> = new Set()
+): Declaration[] | undefined {
+  if (!parts || parts.length === 0) return undefined
+  const expanded: Declaration[] = []
+  for (const part of parts) {
+    const repeated = rules.find(
+      ([candidate, matches]) =>
+        multiple.has(candidate) && matches(part) && claimed(expanded, candidate)
+    )?.[0]
+    const previous = repeated && expanded.find((item) => item.property === repeated)
+    if (previous) {
+      previous.value = `${previous.value} ${part}`
+      continue
+    }
+    const property =
+      rules.find(([candidate, matches]) => matches(part) && !claimed(expanded, candidate))?.[0] ??
+      (rest && !claimed(expanded, rest) ? rest : undefined)
+    if (!property) return undefined
+    expanded.push({ ...declaration, property, value: part })
+  }
+  return expanded
+}
+
+function claimed(expanded: Declaration[], property: string): boolean {
+  return expanded.some((declaration) => declaration.property === property)
+}
+
 function expandBackground(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'background') return undefined
 
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length < 1) return undefined
-
   const bgRepeats = new Set(['repeat', 'no-repeat', 'repeat-x', 'repeat-y', 'space', 'round'])
-  const bgSizes = new Set(['cover', 'contain'])
   const bgAttachments = new Set(['fixed', 'local', 'scroll'])
   const bgPositions = new Set(['center', 'top', 'bottom', 'left', 'right'])
 
-  const expanded: Declaration[] = []
-
-  for (const part of parts) {
-    if (bgRepeats.has(part)) {
-      expanded.push({ ...declaration, property: 'background-repeat', value: part })
-    } else if (bgSizes.has(part)) {
-      expanded.push({ ...declaration, property: 'background-size', value: part })
-    } else if (bgAttachments.has(part)) {
-      expanded.push({ ...declaration, property: 'background-attachment', value: part })
-    } else if (bgPositions.has(part)) {
-      expanded.push({ ...declaration, property: 'background-position', value: part })
-    } else if (part === 'none') {
-      expanded.push({ ...declaration, property: 'background-image', value: 'none' })
-    } else if (!expanded.some((d) => d.property === 'background-color')) {
-      expanded.push({ ...declaration, property: 'background-color', value: part })
-    }
-  }
-
-  return expanded.length > 0 ? expanded : undefined
+  return classifyParts(
+    declaration,
+    spaceList(declaration.value),
+    [
+      ['background-image', isImage],
+      ['background-repeat', (part) => bgRepeats.has(part)],
+      ['background-attachment', (part) => bgAttachments.has(part)],
+      ['background-position', (part) => bgPositions.has(part)]
+    ],
+    'background-color',
+    new Set(['background-position'])
+  )
 }
 
+const fontStyles = new Set(['italic', 'oblique'])
+const fontWeights = new Set([
+  'bold',
+  'bolder',
+  'lighter',
+  '100',
+  '200',
+  '300',
+  '400',
+  '500',
+  '600',
+  '700',
+  '800',
+  '900'
+])
+
+const fontSizeKeywords = new Set([
+  'xx-small',
+  'x-small',
+  'small',
+  'medium',
+  'large',
+  'x-large',
+  'xx-large',
+  'xxx-large',
+  'smaller',
+  'larger'
+])
+
+/** A size needs a unit or a keyword; a bare number in `font` is a weight. */
+function isFontSize(part: string): boolean {
+  const size = dimension(part)
+  return fontSizeKeywords.has(part) || (size !== undefined && size.unit !== '')
+}
+
+/**
+ * `font: [style] [weight] size[/line-height] family`. The family is everything after the size,
+ * commas and quotes included; any other leading keyword keeps the shorthand.
+ */
 function expandFont(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'font') return undefined
 
-  const weights = new Set([
-    'normal',
-    'bold',
-    '100',
-    '200',
-    '300',
-    '400',
-    '500',
-    '600',
-    '700',
-    '800',
-    '900'
-  ])
-  const fontStyles = new Set(['italic', 'oblique'])
+  const nodes = valueNodes(declaration.value)
+  const sizeIndex = nodes.findIndex((node) => node.type === 'word' && isFontSize(node.value))
+  if (sizeIndex === -1) return undefined
 
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length < 2) return undefined
+  const leading = classifyParts(
+    declaration,
+    nodes.slice(0, sizeIndex).map((node) => stringify(node)),
+    [
+      ['font-style', (part) => fontStyles.has(part)],
+      ['font-weight', (part) => fontWeights.has(part)]
+    ]
+  )
+  if (sizeIndex > 0 && !leading) return undefined
 
-  const expanded: Declaration[] = []
+  const size = nodes[sizeIndex]
+  const slash = nodes[sizeIndex + 1]
+  const hasLineHeight = slash?.type === 'div' && slash.value === '/'
+  const lineHeight = hasLineHeight ? nodes[sizeIndex + 2] : undefined
+  const family = nodes.slice(sizeIndex + (hasLineHeight ? 3 : 1))
+  const familyStart = family[0]?.sourceIndex
+  if (!size || (hasLineHeight && !lineHeight) || familyStart === undefined) return undefined
 
-  for (const part of parts) {
-    if (fontStyles.has(part)) {
-      expanded.push({ ...declaration, property: 'font-style', value: part })
-    } else if (weights.has(part)) {
-      expanded.push({ ...declaration, property: 'font-weight', value: part })
-    } else if (part.includes('/')) {
-      const [size, lineHeight] = part.split('/')
-      if (size) expanded.push({ ...declaration, property: 'font-size', value: size })
-      if (lineHeight) expanded.push({ ...declaration, property: 'line-height', value: lineHeight })
-    } else if (/^\d/.test(part)) {
-      expanded.push({ ...declaration, property: 'font-size', value: part })
-    } else if (!expanded.some((d) => d.property === 'font-family')) {
-      expanded.push({ ...declaration, property: 'font-family', value: part })
-    }
-  }
-
-  return expanded.length >= 2 ? expanded : undefined
+  return [
+    ...(leading ?? []),
+    { ...declaration, property: 'font-size', value: stringify(size) },
+    ...(lineHeight
+      ? [{ ...declaration, property: 'line-height', value: stringify(lineHeight) }]
+      : []),
+    { ...declaration, property: 'font-family', value: declaration.value.slice(familyStart).trim() }
+  ]
 }
 
 function expandSize(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'size') return undefined
 
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length === 1 && parts[0]) {
-    return [
-      { ...declaration, property: 'width', value: parts[0] },
-      { ...declaration, property: 'height', value: parts[0] }
-    ]
-  }
+  const parts = spaceList(declaration.value)
+  const [w, h = w] = parts ?? []
+  if (!parts || parts.length > 2 || !w || !h) return undefined
+  return [
+    { ...declaration, property: 'width', value: w },
+    { ...declaration, property: 'height', value: h }
+  ]
+}
 
-  if (parts.length === 2) {
-    const [w, h] = parts
-    if (!w || !h) return undefined
-    return [
-      { ...declaration, property: 'width', value: w },
-      { ...declaration, property: 'height', value: h }
-    ]
-  }
+const lineStyles = new Set([
+  'none',
+  'hidden',
+  'solid',
+  'dashed',
+  'dotted',
+  'double',
+  'groove',
+  'ridge',
+  'inset',
+  'outset'
+])
+const lineWidths = new Set(['thin', 'medium', 'thick'])
+const isLineWidth = (part: string) => lineWidths.has(part) || isDimension(part)
 
-  return undefined
+/** `<width> <style> <color>` in any order, as `border`, `outline` and `column-rule` take. */
+function expandLine(
+  declaration: Declaration,
+  [width, style, color]: [string, string, string]
+): Declaration[] | undefined {
+  return classifyParts(
+    declaration,
+    spaceList(declaration.value),
+    [
+      [style, (part) => lineStyles.has(part)],
+      [width, isLineWidth]
+    ],
+    color
+  )
 }
 
 function expandColumnRule(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'column-rule') return undefined
-
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length < 2) return undefined
-
-  const ruleStyles = new Set([
-    'none',
-    'solid',
-    'dashed',
-    'dotted',
-    'double',
-    'groove',
-    'ridge',
-    'inset',
-    'outset'
-  ])
-  const expanded: Declaration[] = []
-
-  for (const part of parts) {
-    if (ruleStyles.has(part)) {
-      expanded.push({ ...declaration, property: 'column-rule-style', value: part })
-    } else if (/^\d/.test(part)) {
-      expanded.push({ ...declaration, property: 'column-rule-width', value: part })
-    } else {
-      expanded.push({ ...declaration, property: 'column-rule-color', value: part })
-    }
-  }
-
-  return expanded.length >= 2 ? expanded : undefined
+  return expandLine(declaration, ['column-rule-width', 'column-rule-style', 'column-rule-color'])
 }
 
 function expandBorderCombined(declaration: Declaration): Declaration[] | undefined {
@@ -274,147 +340,106 @@ function expandBorderCombined(declaration: Declaration): Declaration[] | undefin
   }
   const longhands = sides[declaration.property]
   if (!longhands) return undefined
-
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length < 2 || parts.length > 3) return undefined
-
-  const borderStyles = new Set([
-    'none',
-    'hidden',
-    'solid',
-    'dashed',
-    'dotted',
-    'double',
-    'groove',
-    'ridge',
-    'inset',
-    'outset'
-  ])
-
-  const expanded: Declaration[] = []
-  for (const part of parts) {
-    if (borderStyles.has(part)) {
-      expanded.push({ ...declaration, property: longhands[1], value: part })
-    } else if (/^\d/.test(part)) {
-      expanded.push({ ...declaration, property: longhands[0], value: part })
-    } else {
-      expanded.push({ ...declaration, property: longhands[2], value: part })
-    }
-  }
-
-  return expanded.length >= 2 ? expanded : undefined
+  const expanded = expandLine(declaration, longhands)
+  return expanded && expanded.length >= 2 ? expanded : undefined
 }
 
+const timingKeywords = new Set([
+  'ease',
+  'ease-in',
+  'ease-out',
+  'ease-in-out',
+  'linear',
+  'step-start',
+  'step-end'
+])
+const timingFunctions = new Set(['cubic-bezier', 'steps', 'linear'])
+
+function isTime(part: string): boolean {
+  const parsed = dimension(part)
+  return parsed?.unit === 'ms' || parsed?.unit === 's'
+}
+
+function isTiming(part: string): boolean {
+  const call = functionCall(part)
+  return timingKeywords.has(part) || (call !== undefined && timingFunctions.has(call.value))
+}
+
+/** One transition only: a comma list keeps the shorthand rather than merging transitions. */
 function expandTransition(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'transition' || declaration.value === 'none') return undefined
+  if (commaList(declaration.value).length !== 1) return undefined
 
-  const parts = declaration.value.split(/\s+/)
-  const expanded: Declaration[] = []
-
-  for (const part of parts) {
-    if (/^\d/.test(part) && (part.endsWith('ms') || part.endsWith('s'))) {
-      if (!expanded.some((d) => d.property === 'transition-duration')) {
-        expanded.push({ ...declaration, property: 'transition-duration', value: part })
-      } else if (!expanded.some((d) => d.property === 'transition-delay')) {
-        expanded.push({ ...declaration, property: 'transition-delay', value: part })
-      }
-    } else if (['ease', 'ease-in', 'ease-out', 'ease-in-out', 'linear'].includes(part)) {
-      expanded.push({ ...declaration, property: 'transition-timing-function', value: part })
-    } else if (['all', 'none', 'color', 'opacity', 'shadow', 'transform'].includes(part)) {
-      expanded.push({ ...declaration, property: 'transition-property', value: part })
-    }
-  }
-
-  return expanded.length > 0 ? expanded : undefined
+  return classifyParts(
+    declaration,
+    spaceList(declaration.value),
+    [
+      ['transition-duration', isTime],
+      ['transition-delay', isTime],
+      ['transition-timing-function', isTiming]
+    ],
+    'transition-property'
+  )
 }
 
 function expandOutline(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'outline') return undefined
-
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length < 2) return undefined
-
-  const outlineStyles = new Set([
-    'none',
-    'solid',
-    'dashed',
-    'dotted',
-    'double',
-    'groove',
-    'ridge',
-    'inset',
-    'outset'
-  ])
-  const expanded: Declaration[] = []
-
-  for (const part of parts) {
-    if (outlineStyles.has(part)) {
-      expanded.push({ ...declaration, property: 'outline-style', value: part })
-    } else if (/^\d/.test(part)) {
-      expanded.push({ ...declaration, property: 'outline-width', value: part })
-    } else {
-      expanded.push({ ...declaration, property: 'outline-color', value: part })
-    }
-  }
-
-  return expanded.length > 0 ? expanded : undefined
+  const expanded = expandLine(declaration, ['outline-width', 'outline-style', 'outline-color'])
+  return expanded && expanded.length >= 2 ? expanded : undefined
 }
 
 function expandTextDecoration(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'text-decoration') return undefined
 
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length < 1) return undefined
-
   const lines = new Set(['underline', 'overline', 'line-through', 'none'])
   const styles = new Set(['solid', 'double', 'dotted', 'dashed', 'wavy'])
-  const expanded: Declaration[] = []
-
-  for (const part of parts) {
-    if (lines.has(part)) {
-      expanded.push({ ...declaration, property: 'text-decoration-line', value: part })
-    } else if (styles.has(part)) {
-      expanded.push({ ...declaration, property: 'text-decoration-style', value: part })
-    }
-  }
-
-  return expanded.length > 0 ? expanded : undefined
+  return classifyParts(
+    declaration,
+    spaceList(declaration.value),
+    [
+      ['text-decoration-line', (part) => lines.has(part)],
+      ['text-decoration-style', (part) => styles.has(part)],
+      [
+        'text-decoration-thickness',
+        (part) => part === 'auto' || part === 'from-font' || isDimension(part)
+      ]
+    ],
+    'text-decoration-color',
+    new Set(['text-decoration-line'])
+  )
 }
 
 function expandListStyle(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'list-style') return undefined
 
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length === 0) return undefined
+  return classifyParts(
+    declaration,
+    spaceList(declaration.value),
+    [
+      ['list-style-position', (part) => part === 'inside' || part === 'outside'],
+      ['list-style-image', (part) => functionCall(part) !== undefined]
+    ],
+    'list-style-type'
+  )
+}
 
-  const expanded = parts.flatMap((value) => {
-    if (value === 'inside' || value === 'outside') {
-      return [{ ...declaration, property: 'list-style-position', value }]
-    }
-
-    if (value === 'disc' || value === 'decimal' || value === 'none') {
-      return [{ ...declaration, property: 'list-style-type', value }]
-    }
-
-    return []
-  })
-
-  return expanded.length > 0 ? expanded : undefined
+/** Two whitespace-separated values, as `gap`, `place-*`, `overflow` and logical pairs take. */
+function splitPair(
+  declaration: Declaration,
+  [first, second]: [string, string]
+): Declaration[] | undefined {
+  const parts = spaceList(declaration.value)
+  const [a, b] = parts ?? []
+  if (parts?.length !== 2 || !a || !b) return undefined
+  return [
+    { ...declaration, property: first, value: a },
+    { ...declaration, property: second, value: b }
+  ]
 }
 
 function expandGap(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'gap') return undefined
-
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length !== 2 || parts.some((part) => part.length === 0)) return undefined
-
-  const [row, col] = parts
-  if (!row || !col) return undefined
-
-  return [
-    { ...declaration, property: 'row-gap', value: row },
-    { ...declaration, property: 'column-gap', value: col }
-  ]
+  return splitPair(declaration, ['row-gap', 'column-gap'])
 }
 
 function expandPlace(declaration: Declaration): Declaration[] | undefined {
@@ -424,55 +449,22 @@ function expandPlace(declaration: Declaration): Declaration[] | undefined {
     'place-self': ['align-self', 'justify-self']
   }
   const longhands = placeMap[declaration.property]
-  if (!longhands) return undefined
-
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length !== 2 || parts.some((part) => part.length === 0)) return undefined
-
-  const [align, justify] = parts
-  if (!align || !justify) return undefined
-
-  return [
-    { ...declaration, property: longhands[0], value: align },
-    { ...declaration, property: longhands[1], value: justify }
-  ]
+  return longhands ? splitPair(declaration, longhands) : undefined
 }
 
 function expandLogicalPair(declaration: Declaration): Declaration[] | undefined {
   const longhands = logicalPairShorthands[declaration.property]
-  if (!longhands) return undefined
-
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length !== 2 || parts.some((part) => part.length === 0)) return undefined
-
-  const [start, end] = parts
-  if (!start || !end) return undefined
-
-  return [
-    { ...declaration, property: longhands[0], value: start },
-    { ...declaration, property: longhands[1], value: end }
-  ]
+  return longhands ? splitPair(declaration, longhands) : undefined
 }
 
 function expandOverflow(declaration: Declaration): Declaration[] | undefined {
   if (declaration.property !== 'overflow') return undefined
-
-  const parts = splitCssValueList(declaration.value)
-  if (parts.length !== 2 || parts.some((part) => part.length === 0)) return undefined
-
-  const [x, y] = parts
-  if (!x || !y) return undefined
-
-  return [
-    { ...declaration, property: 'overflow-x', value: x },
-    { ...declaration, property: 'overflow-y', value: y }
-  ]
+  return splitPair(declaration, ['overflow-x', 'overflow-y'])
 }
 
 function splitBoxValue(value: string): [string, string, string, string] | undefined {
-  const parts = splitCssValueList(value)
-  if (parts.length < 1 || parts.length > 4 || parts.some((part) => part.length === 0))
-    return undefined
+  const parts = spaceList(value)
+  if (!parts || parts.length < 1 || parts.length > 4) return undefined
 
   const [top, right = top, bottom = top, left = right] = parts
   if (!top || !right || !bottom || !left) return undefined

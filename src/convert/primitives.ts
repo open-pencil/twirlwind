@@ -1,13 +1,18 @@
+import { dimension } from '../css'
 import type { ResolvedOptions } from '../types'
 
+/** A length as a multiple of Tailwind's `--spacing` (0.25rem): `16px` and `1rem` are `4`. */
 export function spacingToken(value: string, options: ResolvedOptions): string | undefined {
-  const normalized = value.trim().toLowerCase()
-  const negative = normalized.startsWith('-')
-  const absolute = negative ? normalized.slice(1) : normalized
-  if (absolute === '0' || absolute === '0px' || absolute === '0rem') return '0'
-  if (absolute === '1px') return negative ? '-px' : 'px'
+  const length = dimension(value)
+  if (!length) return undefined
+  const negative = length.number < 0
+  const absolute = Math.abs(length.number)
 
-  const rem = parseRem(absolute) ?? parsePxAsRem(absolute)
+  if (absolute === 0 && (length.unit === '' || length.unit === 'px' || length.unit === 'rem'))
+    return '0'
+  if (absolute === 1 && length.unit === 'px') return negative ? '-px' : 'px'
+
+  const rem = length.unit === 'rem' ? absolute : length.unit === 'px' ? absolute / 16 : undefined
   if (rem === undefined) return undefined
 
   const token = rem / 0.25
@@ -19,20 +24,8 @@ export function spacingToken(value: string, options: ResolvedOptions): string | 
   }
 
   if (options.numericMultipliers !== 'all') return undefined
-  if (Math.abs(token - Math.round(token * 4) / 4) > 0.000001) return undefined
+  const quarter = Math.round(token * 4) / 4
+  if (Math.abs(token - quarter) > 0.000001) return undefined
 
-  const tokenName = String(token).replace(/\.([0-9]*?)0+$/, '.$1')
-  return negative ? `-${tokenName}` : tokenName
-}
-
-function parseRem(value: string): number | undefined {
-  if (!value.endsWith('rem')) return undefined
-  const parsed = Number(value.slice(0, -3))
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
-function parsePxAsRem(value: string): number | undefined {
-  if (!value.endsWith('px')) return undefined
-  const parsed = Number(value.slice(0, -2))
-  return Number.isFinite(parsed) ? parsed / 16 : undefined
+  return negative ? `-${quarter}` : String(quarter)
 }

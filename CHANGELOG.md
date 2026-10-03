@@ -7,6 +7,14 @@
 - **Theme variables**: `theme.variables` lists the custom properties declared in `@theme`; a `var()` naming one on a property its namespace drives becomes that utility: `background-color: var(--color-brand)` → `bg-brand`, `padding: var(--spacing-gutter)` → `p-gutter`. Other variables stay `bg-(--color-brand)`.
 - **`themeNamespaces` and `parseThemeVariable`**: the Tailwind v4 theme namespaces, and a parser that splits `--font-weight-bold` into namespace and key by longest prefix.
 
+### Fixes
+
+- **CSS values are parsed, not pattern-matched**, with `postcss-value-parser` (new dependency). Semicolons in strings and `url()` no longer split a declaration string, `!important` inside a string stays in the value, and functions nested in arguments (`blur(calc(4px * 2))`) keep their arguments.
+- **Shorthands expand only when every part is understood.** `font` keeps its whole family list and reads a bare number as a weight, `transition` keeps `cubic-bezier()` and leaves lists of transitions whole, and `background: url(…)` is an image rather than a color. Anything else stays one arbitrary declaration instead of losing parts.
+- **Filter and transform lists convert all or nothing.** A list with an unknown function stays arbitrary, and a transform converts only when its functions follow Tailwind's own order (translate, rotate, scale), since other orders produce a different matrix.
+- **Media queries map to variants only when exact.** `(min-width: 640px) and (max-width: 1023px)` no longer becomes `sm:`; features joined by `and` stack (`md:motion-reduce:`); queries with a media type, `(hover: hover)` (not the `hover:` state) or `prefers-color-scheme: light` become arbitrary at-rule variants such as `[@media(hover:_hover)]:`. `@supports` and unmatched `@container` queries use the same form, which Tailwind generates, instead of `supports-[…]` with unescaped spaces and `@container-[…]`, which it ignored. Named containers keep their name (`@lg/sidebar`).
+- **Smaller fixes:** gradient stops with positions stay arbitrary instead of dropping the position; arbitrary gradient colors are escaped; `span 2 / span 3` is no longer `col-span-2`; `rgb()` alpha in percent and `opacity`, `zoom` and `scale` in percent convert.
+
 ## 0.3.0
 
 ### New features
