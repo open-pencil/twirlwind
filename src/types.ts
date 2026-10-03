@@ -13,6 +13,12 @@ export type StyleInput =
 export type Theme = {
   spacing?: Record<string, string>
   colors?: Record<string, string>
+  /**
+   * Custom properties declared in `@theme`, such as `--color-brand`. A whole `var()` value
+   * naming one, on a property its namespace drives, becomes that utility: `bg-brand`.
+   * Variables in `:root` generate no utilities, so leave them out.
+   */
+  variables?: readonly string[]
 }
 
 export type Options = {
@@ -47,5 +53,5 @@ export type Result = {
 }
 
 export type ResolvedOptions = Required<Omit<Options, 'theme'>> & {
-  theme: Required<Theme>
+  theme: Required<Omit<Theme, 'variables'>> & { variables: ReadonlySet<string> }
 }

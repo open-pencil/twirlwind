@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-export async function compileTailwindClasses(classes: Iterable<string>): Promise<string> {
+export async function compileTailwindClasses(classes: Iterable<string>, css = ''): Promise<string> {
   const uniqueClasses = Array.from(new Set(classes)).filter(Boolean)
   const directory = await mkdtemp(join(process.cwd(), '.tailwind-test-'))
   const input = join(directory, 'input.css')
@@ -10,7 +10,7 @@ export async function compileTailwindClasses(classes: Iterable<string>): Promise
   try {
     await writeFile(
       input,
-      `@import "tailwindcss";\n@source inline("${uniqueClasses.map(escapeSourceClass).join(' ')}");\n`
+      `@import "tailwindcss";\n${css}\n@source inline("${uniqueClasses.map(escapeSourceClass).join(' ')}");\n`
     )
 
     const tailwindProcess = Bun.spawn({

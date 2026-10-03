@@ -1,5 +1,6 @@
 import { lookupHexToken } from '../colors'
 import { arbitraryProperty, arbitraryValue } from '../escape'
+import { parseThemeVariable, themeUtilities } from '../namespaces'
 import type { ConvertedDeclaration, Declaration, ResolvedOptions } from '../types'
 import { arbitraryPrefixes, exactUtilities, spacingProperties, valueAliases } from './data'
 import { spacingToken } from './primitives'
@@ -87,6 +88,9 @@ export function convertDeclaration(
     }
     return converted(declaration, gradientResult, 'exact')
   }
+
+  const themeClass = convertThemeVariable(declaration, options)
+  if (themeClass) return converted(declaration, themeClass, 'exact')
 
   const varRef = convertVarReference(declaration)
   if (varRef) return converted(declaration, varRef, 'exact')
@@ -722,6 +726,18 @@ const varPrefixes: Record<string, string> = {
   'box-shadow': 'shadow',
   'line-height': 'leading',
   'letter-spacing': 'tracking'
+}
+
+function convertThemeVariable(
+  declaration: Declaration,
+  options: ResolvedOptions
+): string | undefined {
+  const name = declaration.value.match(/^var\(\s*(--[\w.-]+)\s*\)$/)?.[1]
+  if (!name || !options.theme.variables.has(name)) return undefined
+  const utility = themeUtilities[declaration.property]
+  const variable = parseThemeVariable(name)
+  if (!utility || variable?.namespace !== utility.namespace) return undefined
+  return `${utility.prefix}-${variable.key}`
 }
 
 function convertVarReference(declaration: Declaration): string | undefined {
