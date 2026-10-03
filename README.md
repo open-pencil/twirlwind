@@ -114,6 +114,21 @@ twirl({
 // → "text-white hover:text-blue-500 md:grid dark:bg-black @lg:flex"
 ```
 
+### Theme variables
+
+A `var()` names a variable; pass the ones your `@theme` declares and it becomes that theme's utility. Variables in `:root` generate no utilities, so they stay references.
+
+```ts
+const variables = ['--color-brand', '--spacing-gutter', '--radius-card']
+
+twirl({ backgroundColor: 'var(--color-brand)' }, { theme: { variables } }) // "bg-brand"
+twirl({ padding: 'var(--spacing-gutter)' }, { theme: { variables } }) // "p-gutter"
+twirl({ borderRadius: 'var(--radius-card)' }, { theme: { variables } }) // "rounded-card"
+twirl({ backgroundColor: 'var(--color-brand)' }) // "bg-(--color-brand)"
+```
+
+`themeNamespaces` lists the Tailwind v4 namespaces, and `parseThemeVariable('--font-weight-bold')` returns `{ namespace: 'font-weight', key: 'bold' }`.
+
 ### Arbitrary fallback
 
 Every CSS property produces valid output.
@@ -135,7 +150,8 @@ twirl(input, {
   numericMultipliers: 'integer', // "all" | "integer" | "never"
   theme: {
     colors: { brand: '#ff6600' },
-    spacing: { '18': '4.5rem' }
+    spacing: { '18': '4.5rem' },
+    variables: ['--color-brand'] // custom properties declared in @theme
   }
 })
 ```

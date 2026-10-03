@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### New features
+
+- **Theme variables**: `theme.variables` lists the custom properties declared in `@theme`; a `var()` naming one on a property its namespace drives becomes that utility: `background-color: var(--color-brand)` → `bg-brand`, `padding: var(--spacing-gutter)` → `p-gutter`. Other variables stay `bg-(--color-brand)`.
+- **`themeNamespaces` and `parseThemeVariable`**: the Tailwind v4 theme namespaces, and a parser that splits `--font-weight-bold` into namespace and key by longest prefix.
+
 ## 0.3.0
 
 ### New features

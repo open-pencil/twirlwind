@@ -6,6 +6,8 @@ import { sortConverted } from './sort'
 import { resolveOptions } from './theme'
 import type { Options, Result, StyleInput } from './types'
 
+export { parseThemeVariable, themeNamespaces, themeUtilities } from './namespaces'
+export type { ThemeNamespace, ThemeVariable } from './namespaces'
 export type {
   ConvertedDeclaration,
   Declaration,

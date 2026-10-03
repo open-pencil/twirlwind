@@ -1,7 +1,7 @@
 import { tailwindColors } from './colors'
 import type { Options, ResolvedOptions, Theme } from './types'
 
-export const defaultTheme: Required<Theme> = {
+export const defaultTheme: Required<Omit<Theme, 'variables'>> = {
   spacing: {},
   colors: tailwindColors
 }
@@ -10,7 +10,8 @@ export function resolveOptions(options: Options = {}): ResolvedOptions {
   return {
     theme: {
       spacing: { ...defaultTheme.spacing, ...options.theme?.spacing },
-      colors: { ...defaultTheme.colors, ...options.theme?.colors }
+      colors: { ...defaultTheme.colors, ...options.theme?.colors },
+      variables: new Set(options.theme?.variables)
     },
     allowArbitraryValues: options.allowArbitraryValues ?? true,
     allowArbitraryProperties: options.allowArbitraryProperties ?? true,
