@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- **Radius uses Tailwind's radius scale only.** `border-radius` and each corner map to `xs` through `4xl`, `none`, and `full`, so `12px` is `rounded-xl` and `32px 32px 6px 6px` is `rounded-t-4xl rounded-b-md`. Values on the spacing grid no longer become `rounded-3` or `rounded-4`, which Tailwind v4 does not generate, and other values stay arbitrary, such as `rounded-[20px]`.
+
 ## 0.4.0
 
 ### New features

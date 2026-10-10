@@ -9,6 +9,27 @@ export type ConversionCase = {
 
 export const conversionCases: ConversionCase[] = [
   {
+    name: 'radius on the theme scale',
+    style: { borderRadius: '12px' },
+    className: 'rounded-xl',
+    declarations: [['border-radius', 'var(--radius-xl)']]
+  },
+  {
+    name: 'radius on the spacing grid but off the theme scale',
+    style: { borderRadius: '20px' },
+    className: 'rounded-[20px]',
+    declarations: [['border-radius', '20px']]
+  },
+  {
+    name: 'corners on the theme scale',
+    style: { borderRadius: '32px 32px 6px 6px' },
+    className: 'rounded-t-4xl rounded-b-md',
+    declarations: [
+      ['border-top-left-radius', 'var(--radius-4xl)'],
+      ['border-bottom-right-radius', 'var(--radius-md)']
+    ]
+  },
+  {
     name: 'common object styles',
     style: {
       display: 'flex',
