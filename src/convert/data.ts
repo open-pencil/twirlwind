@@ -937,6 +937,31 @@ export const spacingProperties = new Set([
   'border-inline-end-width',
   'border-inline-width',
   'border-block-width',
+  'font-size',
+  'line-height',
+  'letter-spacing',
+  'outline-width',
+  'outline-offset'
+])
+
+/**
+ * Tailwind v4's default `--radius-*` scale, with `none` and `full`, by the values each key sets.
+ * Radius has no spacing multiples: `rounded-4` is not a utility, so other values stay arbitrary.
+ */
+const radiusScale: Record<string, readonly string[]> = {
+  none: ['0', '0px'],
+  xs: ['0.125rem', '2px'],
+  sm: ['0.25rem', '4px'],
+  md: ['0.375rem', '6px'],
+  lg: ['0.5rem', '8px'],
+  xl: ['0.75rem', '12px'],
+  '2xl': ['1rem', '16px'],
+  '3xl': ['1.5rem', '24px'],
+  '4xl': ['2rem', '32px'],
+  full: ['9999px']
+}
+
+const radiusProperties = [
   'border-radius',
   'border-top-left-radius',
   'border-top-right-radius',
@@ -945,13 +970,19 @@ export const spacingProperties = new Set([
   'border-start-start-radius',
   'border-start-end-radius',
   'border-end-end-radius',
-  'border-end-start-radius',
-  'font-size',
-  'line-height',
-  'letter-spacing',
-  'outline-width',
-  'outline-offset'
-])
+  'border-end-start-radius'
+]
+
+const radiusAliases = Object.fromEntries(
+  radiusProperties.map((property) => [
+    property,
+    Object.fromEntries(
+      Object.entries(radiusScale).flatMap(([key, values]) =>
+        values.map((value) => [value, `${arbitraryPrefixes[property]}-${key}`])
+      )
+    )
+  ])
+)
 
 export const valueAliases: Record<string, Record<string, string>> = {
   width: {
@@ -1104,97 +1135,7 @@ export const valueAliases: Record<string, Record<string, string>> = {
   'margin-right': { auto: 'mr-auto' },
   'margin-bottom': { auto: 'mb-auto' },
   'margin-left': { auto: 'ml-auto' },
-  'border-radius': {
-    '0': 'rounded-none',
-    '0px': 'rounded-none',
-    '0.125rem': 'rounded-xs',
-    '2px': 'rounded-xs',
-    '0.25rem': 'rounded-sm',
-    '4px': 'rounded-sm',
-    '0.375rem': 'rounded-md',
-    '6px': 'rounded-md',
-    '0.5rem': 'rounded-lg',
-    '8px': 'rounded-lg',
-    '0.75rem': 'rounded-xl',
-    '12px': 'rounded-xl',
-    '1rem': 'rounded-2xl',
-    '16px': 'rounded-2xl',
-    '1.5rem': 'rounded-3xl',
-    '24px': 'rounded-3xl',
-    '9999px': 'rounded-full'
-  },
-  'border-top-left-radius': {
-    '0': 'rounded-tl-none',
-    '0px': 'rounded-tl-none',
-    '0.25rem': 'rounded-tl-sm',
-    '4px': 'rounded-tl-sm',
-    '0.5rem': 'rounded-tl-lg',
-    '8px': 'rounded-tl-lg',
-    '9999px': 'rounded-tl-full'
-  },
-  'border-top-right-radius': {
-    '0': 'rounded-tr-none',
-    '0px': 'rounded-tr-none',
-    '0.25rem': 'rounded-tr-sm',
-    '4px': 'rounded-tr-sm',
-    '0.5rem': 'rounded-tr-lg',
-    '8px': 'rounded-tr-lg',
-    '9999px': 'rounded-tr-full'
-  },
-  'border-bottom-right-radius': {
-    '0': 'rounded-br-none',
-    '0px': 'rounded-br-none',
-    '0.25rem': 'rounded-br-sm',
-    '4px': 'rounded-br-sm',
-    '0.5rem': 'rounded-br-lg',
-    '8px': 'rounded-br-lg',
-    '9999px': 'rounded-br-full'
-  },
-  'border-bottom-left-radius': {
-    '0': 'rounded-bl-none',
-    '0px': 'rounded-bl-none',
-    '0.25rem': 'rounded-bl-sm',
-    '4px': 'rounded-bl-sm',
-    '0.5rem': 'rounded-bl-lg',
-    '8px': 'rounded-bl-lg',
-    '9999px': 'rounded-bl-full'
-  },
-  'border-start-start-radius': {
-    '0': 'rounded-ss-none',
-    '0px': 'rounded-ss-none',
-    '0.25rem': 'rounded-ss-sm',
-    '4px': 'rounded-ss-sm',
-    '0.5rem': 'rounded-ss-lg',
-    '8px': 'rounded-ss-lg',
-    '9999px': 'rounded-ss-full'
-  },
-  'border-start-end-radius': {
-    '0': 'rounded-se-none',
-    '0px': 'rounded-se-none',
-    '0.25rem': 'rounded-se-sm',
-    '4px': 'rounded-se-sm',
-    '0.5rem': 'rounded-se-lg',
-    '8px': 'rounded-se-lg',
-    '9999px': 'rounded-se-full'
-  },
-  'border-end-end-radius': {
-    '0': 'rounded-ee-none',
-    '0px': 'rounded-ee-none',
-    '0.25rem': 'rounded-ee-sm',
-    '4px': 'rounded-ee-sm',
-    '0.5rem': 'rounded-ee-lg',
-    '8px': 'rounded-ee-lg',
-    '9999px': 'rounded-ee-full'
-  },
-  'border-end-start-radius': {
-    '0': 'rounded-es-none',
-    '0px': 'rounded-es-none',
-    '0.25rem': 'rounded-es-sm',
-    '4px': 'rounded-es-sm',
-    '0.5rem': 'rounded-es-lg',
-    '8px': 'rounded-es-lg',
-    '9999px': 'rounded-es-full'
-  },
+  ...radiusAliases,
   columns: { auto: 'columns-auto' },
   'font-size': {
     '12px': 'text-xs',
