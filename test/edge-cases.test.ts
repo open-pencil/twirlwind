@@ -203,3 +203,14 @@ test('edge case class output compiles with Tailwind', async () => {
   const css = await expectTailwindCompiles(classes)
   expect(css.length).toBeGreaterThan(100)
 })
+
+test('the generic sans-serif family maps to font-sans, as serif and monospace map to theirs', () => {
+  expect(twirl({ fontFamily: 'sans-serif' })).toBe('font-sans')
+  expect(twirl({ font: 'bold 16px/1.5 sans-serif' })).toBe(
+    'text-base font-bold leading-normal font-sans'
+  )
+  expect(twirl({ fontFamily: 'serif' })).toBe('font-serif')
+  expect(twirl({ fontFamily: 'monospace' })).toBe('font-mono')
+  // `sans` is no generic family, so a font of that name stays one.
+  expect(twirl({ fontFamily: 'sans' })).toBe('font-[sans]')
+})
