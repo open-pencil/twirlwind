@@ -169,7 +169,7 @@ export const exactUtilities: Record<string, Record<string, string>> = {
   },
   'font-style': { italic: 'italic', normal: 'not-italic' },
   'font-family': {
-    sans: 'font-sans',
+    'sans-serif': 'font-sans',
     serif: 'font-serif',
     monospace: 'font-mono',
     'ui-sans-serif, system-ui, sans-serif': 'font-sans',
